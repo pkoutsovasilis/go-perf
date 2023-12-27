@@ -12,9 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkoutsovasilis/go-perf"
 	"golang.org/x/sys/unix"
-
-	"github.com/elastic/go-perf"
 )
 
 func TestCount(t *testing.T) {

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build linux
+//go:build linux
 
 package perf_test
 
@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/elastic/go-perf"
+	"github.com/pkoutsovasilis/go-perf"
 )
 
 func ExampleHardwareCounter_iPC() {

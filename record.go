@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build linux
+//go:build linux
 
 package perf
 
@@ -31,6 +31,37 @@ var ErrNoReadRecord = errors.New("perf: ReadRecord disabled")
 
 // ErrBadRecord is returned by ReadRecord when a read record can't be decoded.
 var ErrBadRecord = errors.New("bad record received")
+
+// ReadRecordNonBlock reads and decodes a record from the ring buffer associated
+// with ev.
+//
+// ReadRecordNonBlock may be called concurrently with ReadCount or ReadGroupCount,
+// but not concurrently with itself, ReadRawRecord, Close, or any other
+// Event method.
+//
+// If another event's records were routed to ev via SetOutput, and the
+// two events did not have compatible SampleFormat Options settings (see
+// SetOutput documentation), ReadRecordNonBlock returns ErrNoReadRecord.
+func (ev *Event) ReadRecordNonBlock() (Record, error) {
+	if err := ev.ok(); err != nil {
+		return nil, err
+	}
+	if ev.noReadRecord {
+		return nil, ErrNoReadRecord
+	}
+	var raw RawRecord
+	if !ev.readRawRecordNonblock(&raw) {
+		return nil, nil
+	}
+	rec, err := newRecord(ev, raw.Header.Type)
+	if err != nil {
+		return nil, err
+	}
+	if err := rec.DecodeFrom(&raw, ev); err != nil {
+		return nil, err
+	}
+	return rec, nil
+}
 
 // ReadRecord reads and decodes a record from the ring buffer associated
 // with ev.

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build linux
 // +build linux
 
 package perf
@@ -40,6 +41,11 @@ const (
 	eventStateUninitialized = 0
 	eventStateOK            = 1
 	eventStateClosed        = 2
+)
+
+const (
+	mapRingWithPoll = 0
+	mapRingWithoutPoll
 )
 
 // Event is an active perf event.
@@ -106,22 +112,22 @@ type Event struct {
 //
 // The pid and cpu parameters specify which thread and CPU to monitor:
 //
-//     * if pid == CallingThread and cpu == AnyCPU, the event measures
-//       the calling thread on any CPU
+//   - if pid == CallingThread and cpu == AnyCPU, the event measures
+//     the calling thread on any CPU
 //
-//     * if pid == CallingThread and cpu >= 0, the event measures
-//       the calling thread only when running on the specified CPU
+//   - if pid == CallingThread and cpu >= 0, the event measures
+//     the calling thread only when running on the specified CPU
 //
-//     * if pid > 0 and cpu == AnyCPU, the event measures the specified
-//       thread on any CPU
+//   - if pid > 0 and cpu == AnyCPU, the event measures the specified
+//     thread on any CPU
 //
-//     * if pid > 0 and cpu >= 0, the event measures the specified thread
-//       only when running on the specified CPU
+//   - if pid > 0 and cpu >= 0, the event measures the specified thread
+//     only when running on the specified CPU
 //
-//     * if pid == AllThreads and cpu >= 0, the event measures all threads
-//       on the specified CPU
+//   - if pid == AllThreads and cpu >= 0, the event measures all threads
+//     on the specified CPU
 //
-//     * finally, the pid == AllThreads and cpu == AnyCPU setting is invalid
+//   - finally, the pid == AllThreads and cpu == AnyCPU setting is invalid
 //
 // If group is non-nil, the returned Event is made part of the group
 // associated with the specified group Event.
@@ -232,7 +238,14 @@ const DefaultNumPages = 128
 //
 // This enables reading records via ReadRecord / ReadRawRecord.
 func (ev *Event) MapRing() error {
-	return ev.MapRingNumPages(DefaultNumPages)
+	return mapRing(ev, DefaultNumPages, mapRingWithPoll)
+}
+
+// MapRingNumPagesNoPoll maps the ring buffer attached to the event into memory.
+// but does not initialise the necessary fields to support ReadRecord. You
+// should use only ReadRecordNonBlock for this Event.
+func (ev *Event) MapRingNumPagesNoPoll(num int) error {
+	return mapRing(ev, num, mapRingWithoutPoll)
 }
 
 // MapRingNumPages is like MapRing, but allows the caller to The size of
@@ -240,6 +253,10 @@ func (ev *Event) MapRing() error {
 // is num+1 pages, because an additional metadata page is mapped before the
 // data portion of the ring.
 func (ev *Event) MapRingNumPages(num int) error {
+	return mapRing(ev, num, mapRingWithPoll)
+}
+
+func mapRing(ev *Event, num int, mapRingType int) error {
 	if err := ev.ok(); err != nil {
 		return err
 	}
@@ -269,19 +286,23 @@ func (ev *Event) MapRingNumPages(num int) error {
 
 	ringdata := ring[meta.Data_offset:]
 
-	wakeupfd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
-	if err != nil {
-		return os.NewSyscallError("eventfd", err)
-	}
-
 	ev.ring = ring
 	ev.meta = meta
 	ev.ringdata = ringdata
-	ev.wakeupfd = wakeupfd
-	ev.pollreq = make(chan pollreq)
-	ev.pollresp = make(chan pollresp)
 
-	go ev.poll()
+	switch mapRingType {
+	case mapRingWithPoll:
+		wakeupfd, err := unix.Eventfd(0, unix.EFD_CLOEXEC|unix.EFD_NONBLOCK)
+		if err != nil {
+			return os.NewSyscallError("eventfd", err)
+		}
+
+		ev.wakeupfd = wakeupfd
+		ev.pollreq = make(chan pollreq)
+		ev.pollresp = make(chan pollresp)
+
+		go ev.poll()
+	}
 
 	return nil
 }
